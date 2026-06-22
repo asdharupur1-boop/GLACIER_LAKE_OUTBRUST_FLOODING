@@ -1,0 +1,20 @@
+{
+  "sequence_length": 24,
+  "feature_cols": [
+    "water_level",
+    "rainfall",
+    "temperature",
+    "humidity",
+    "ph",
+    "turbidity",
+    "tds"
+  ],
+  "target_col": "water_level",
+  "test_size": 0.2,
+  "r2_score": 0.8695985402125188,
+  "rmse": 1.0178841280267221,
+  "mae": 0.8953890589902748,
+  "mse": 1.0360880980887204,
+  "training_samples": 28089,
+  "test_samples": 7023
+}
