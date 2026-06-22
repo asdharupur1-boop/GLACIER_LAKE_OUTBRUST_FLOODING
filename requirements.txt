@@ -1,4 +1,4 @@
-
+joblib
 numpy
 pandas
 matplotlib
@@ -8,4 +8,3 @@ tensorflow
 keras
 streamlit
 plotly
-joblib
