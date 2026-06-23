@@ -1,19 +1,17 @@
 # ================================================================
-# app.py - Complete Streamlit Dashboard (REQUIRES MODEL)
-# IoT Water Level Monitoring & Prediction System
+# app.py - Plotly-Free Streamlit Dashboard
+# Uses Matplotlib + Streamlit Native Charts
 # ================================================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
+import matplotlib.pyplot as plt
+import seaborn as sns
 import joblib
 import json
 import os
-import requests
 from datetime import datetime, timedelta
-import io
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -37,16 +35,8 @@ DEVELOPER_INFO = {
     "role": "Lead AI/ML Engineer",
     "organization": "Water Resources Research Center",
     "email": "your.email@research.org",
-    "phone": "+91-XXXXX-XXXXX",
     "github": "https://github.com/yourusername",
-    "linkedin": "https://linkedin.com/in/yourprofile",
-    "website": "https://yourwebsite.com",
-    "research_area": "IoT & AI for Water Resource Management",
-    "publications": [
-        "CNN-LSTM for Water Level Prediction (2024)",
-        "Reinforcement Learning for Flood Management (2024)",
-        "IoT Sensor Networks for Remote Lake Monitoring (2023)"
-    ]
+    "linkedin": "https://linkedin.com/in/yourprofile"
 }
 
 # ================================================================
@@ -57,63 +47,14 @@ if 'df' not in st.session_state:
     st.session_state.df = None
 if 'data_source' not in st.session_state:
     st.session_state.data_source = "None"
-if 'model_loaded' not in st.session_state:
-    st.session_state.model_loaded = False
+if 'model' not in st.session_state:
+    st.session_state.model = None
 if 'scaler' not in st.session_state:
     st.session_state.scaler = None
 if 'feature_cols' not in st.session_state:
     st.session_state.feature_cols = None
 if 'metadata' not in st.session_state:
     st.session_state.metadata = None
-if 'model' not in st.session_state:
-    st.session_state.model = None
-
-# ================================================================
-# CHECK MODEL FILES
-# ================================================================
-
-def check_model_files():
-    """Check if all required model files exist."""
-    required_files = [
-        'models/cnn_lstm_model.h5',
-        'models/scaler.pkl',
-        'models/feature_columns.json',
-        'models/metadata.json'
-    ]
-    
-    missing = []
-    for f in required_files:
-        if not os.path.exists(f):
-            missing.append(f)
-    
-    return missing
-
-def load_model_files():
-    """Load all model files."""
-    try:
-        # Load scaler
-        scaler = joblib.load('models/scaler.pkl')
-        
-        # Load feature columns
-        with open('models/feature_columns.json', 'r') as f:
-            feature_cols = json.load(f)
-        
-        # Load metadata
-        with open('models/metadata.json', 'r') as f:
-            metadata = json.load(f)
-        
-        # Load model
-        import tensorflow as tf
-        from tensorflow.keras.models import load_model
-        
-        model = load_model('models/cnn_lstm_model.h5', compile=False)
-        model.compile(optimizer='adam', loss='mse', metrics=['mae'])
-        
-        return model, scaler, feature_cols, metadata
-        
-    except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
-        return None, None, None, None
 
 # ================================================================
 # TITLE
@@ -123,62 +64,45 @@ st.title("🌊 IoT Water Level Monitoring & Prediction System")
 st.markdown("---")
 
 # ================================================================
-# CHECK MODEL BEFORE ANYTHING ELSE
+# CHECK AND LOAD MODEL
 # ================================================================
 
-missing_files = check_model_files()
+def load_model_files():
+    """Load all model files if they exist."""
+    try:
+        if not os.path.exists('models/cnn_lstm_model.h5'):
+            return None, None, None, None
+        
+        from tensorflow.keras.models import load_model
+        
+        model = load_model('models/cnn_lstm_model.h5', compile=False)
+        model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+        
+        scaler = joblib.load('models/scaler.pkl')
+        
+        with open('models/feature_columns.json', 'r') as f:
+            feature_cols = json.load(f)
+        
+        with open('models/metadata.json', 'r') as f:
+            metadata = json.load(f)
+        
+        return model, scaler, feature_cols, metadata
+        
+    except Exception as e:
+        st.warning(f"⚠️ Model loading issue: {str(e)}")
+        return None, None, None, None
 
-if missing_files:
-    st.error("🚨 MODEL FILES NOT FOUND!")
-    st.markdown("### Missing Files:")
-    for f in missing_files:
-        st.markdown(f"- `{f}`")
-    
-    st.markdown("---")
-    st.markdown("### How to Fix:")
-    st.markdown("**Option 1: Train the Model**")
-    st.code("python train_model.py", language="bash")
-    
-    st.markdown("**Option 2: Check File Locations**")
-    st.markdown("- Make sure the `models/` folder exists")
-    st.markdown("- Ensure all files are in the correct location")
-    st.markdown("- Verify file permissions")
-    
-    st.markdown("---")
-    st.markdown("### Required File Structure:")
-    st.code("""
-your-project/
-├── app.py
-├── train_model.py
-└── models/
-    ├── cnn_lstm_model.h5
-    ├── scaler.pkl
-    ├── feature_columns.json
-    └── metadata.json
-    """, language="bash")
-    st.stop()
+# Try to load model
+model, scaler, feature_cols, metadata = load_model_files()
 
-# ================================================================
-# LOAD MODEL (Only if files exist)
-# ================================================================
+if model is not None:
+    st.success("✅ AI Model Loaded Successfully!")
+    SEQUENCE_LENGTH = metadata.get('sequence_length', 24)
+else:
+    st.info("ℹ️ Model not found. Running in data visualization mode only.")
+    SEQUENCE_LENGTH = 24
 
-with st.spinner("🔄 Loading AI Model..."):
-    model, scaler, feature_cols, metadata = load_model_files()
-
-if model is None:
-    st.error("Failed to load model. Please check the files and try again.")
-    st.stop()
-
-st.session_state.model = model
-st.session_state.scaler = scaler
-st.session_state.feature_cols = feature_cols
-st.session_state.metadata = metadata
-st.session_state.model_loaded = True
-
-SEQUENCE_LENGTH = metadata.get('sequence_length', 24)
 DANGER_THRESHOLD = 25
-
-st.success("AI Model Loaded Successfully!")
 
 # ================================================================
 # SIDEBAR
@@ -194,16 +118,8 @@ with st.sidebar:
         st.markdown(f"{DEVELOPER_INFO['organization']}")
         st.markdown("---")
         st.markdown(f"**Email:** {DEVELOPER_INFO['email']}")
-        st.markdown(f"**Phone:** {DEVELOPER_INFO['phone']}")
         st.markdown(f"**GitHub:** {DEVELOPER_INFO['github']}")
         st.markdown(f"**LinkedIn:** {DEVELOPER_INFO['linkedin']}")
-        st.markdown(f"**Website:** {DEVELOPER_INFO['website']}")
-        st.markdown("---")
-        st.markdown(f"**Research Area:**")
-        st.markdown(f"{DEVELOPER_INFO['research_area']}")
-        st.markdown("**Publications:**")
-        for pub in DEVELOPER_INFO['publications']:
-            st.markdown(f"- {pub}")
         st.markdown("---")
         st.caption("📅 Version 2.0 | © 2026")
     
@@ -214,11 +130,10 @@ with st.sidebar:
     
     data_option = st.radio(
         "Select Data Source",
-        ["📁 Local File", "🌐 URL Link", "📊 Sample Data"],
-        index=2
+        ["📁 Local File", "📊 Sample Data"],
+        index=1
     )
     
-    # Load data based on option
     if data_option == "📁 Local File":
         uploaded_file = st.file_uploader("Upload CSV", type=['csv'])
         if uploaded_file is not None:
@@ -226,36 +141,19 @@ with st.sidebar:
                 df = pd.read_csv(uploaded_file, parse_dates=['timestamp'])
                 st.session_state.df = df
                 st.session_state.data_source = "Local"
-                st.success(f"Loaded {len(df):,} records")
+                st.success(f"✅ Loaded {len(df):,} records")
             except Exception as e:
                 st.error(f"Error: {str(e)}")
     
-    elif data_option == "🌐 URL Link":
-        url = st.text_input("Dataset URL")
-        if st.button("Load Dataset") and url:
-            try:
-                response = requests.get(url, timeout=30)
-                if response.status_code == 200:
-                    content = io.StringIO(response.text)
-                    df = pd.read_csv(content, parse_dates=['timestamp'])
-                    st.session_state.df = df
-                    st.session_state.data_source = "URL"
-                    st.success(f"Loaded {len(df):,} records")
-                else:
-                    st.error(f"HTTP Error: {response.status_code}")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
-    
-    else:  # Sample Data
+    else:
         if st.button("🔄 Load Sample Data") or st.session_state.df is None:
-            # Check if sample data exists
             if os.path.exists('data/synthetic_water_data.csv'):
                 df = pd.read_csv('data/synthetic_water_data.csv', parse_dates=['timestamp'])
                 st.session_state.df = df
                 st.session_state.data_source = "Sample"
-                st.success(f"Loaded {len(df):,} records")
+                st.success(f"✅ Loaded {len(df):,} records")
             else:
-                st.warning("Sample data not found. Please run train_model.py first.")
+                st.warning("⚠️ Sample data not found. Please run train_model.py first.")
     
     st.markdown("---")
     
@@ -290,7 +188,6 @@ with st.sidebar:
         st.markdown("---")
         st.caption(f"📊 Data: {st.session_state.data_source}")
         st.caption(f"📈 Records: {len(df):,}")
-        st.caption(f"🔄 Updated: {datetime.now().strftime('%H:%M:%S')}")
 
 # ================================================================
 # MAIN CONTENT
@@ -298,6 +195,21 @@ with st.sidebar:
 
 if st.session_state.df is None:
     st.info("👈 Load a dataset from the sidebar to begin.")
+    
+    # Show a preview of what the dashboard can do
+    st.markdown("""
+    ### 🚀 Features
+    - **📊 Live Monitoring**: Track water levels in real-time
+    - **🔮 AI Predictions**: CNN-LSTM model forecasts future levels
+    - **🚨 Alert System**: Automatic danger notifications
+    - **📈 Analytics**: Historical trends and distributions
+    - **📡 Sensor Network**: Multi-node monitoring
+    
+    ### 📂 How to Get Started
+    1. **Load Data**: Use the sidebar to upload your dataset
+    2. **Select Node**: Choose a sensor node to monitor
+    3. **View Insights**: Explore time series, distributions, and predictions
+    """)
     st.stop()
 
 df = st.session_state.df
@@ -321,7 +233,7 @@ period_map = {
 node_df = node_df.tail(period_map[time_period])
 
 if len(node_df) == 0:
-    st.warning("No data available. Please adjust filters.")
+    st.warning("⚠️ No data available. Please adjust filters.")
     st.stop()
 
 # ================================================================
@@ -358,109 +270,121 @@ with col5:
 # TABS
 # ================================================================
 
-tab1, tab2, tab3, tab4 = st.tabs(["📉 Time Series", "📊 Distribution", "🔮 Predictions", "📋 Data Table"])
+tab1, tab2, tab3 = st.tabs(["📉 Time Series", "📊 Distribution", "🔮 Predictions"])
 
 # ================================================================
-# TAB 1: Time Series
+# TAB 1: Time Series (Using Matplotlib)
 # ================================================================
 
 with tab1:
-    fig = go.Figure()
+    st.subheader("📈 Water Level Trend")
     
-    fig.add_trace(go.Scatter(
-        x=node_df['timestamp'],
-        y=node_df['water_level'],
-        mode='lines',
-        name='Water Level',
-        line=dict(color='blue', width=2)
-    ))
+    # Create figure
+    fig, ax = plt.subplots(figsize=(12, 5))
     
-    fig.add_hline(
-        y=DANGER_THRESHOLD,
-        line_dash="dash",
-        line_color="red",
-        annotation_text=f"Danger: {DANGER_THRESHOLD}m"
-    )
+    # Plot water level
+    ax.plot(node_df['timestamp'], node_df['water_level'], 
+            color='blue', linewidth=2, label='Water Level')
     
-    fig.add_hline(
-        y=avg,
-        line_dash="dot",
-        line_color="green",
-        annotation_text=f"Mean: {avg:.2f}m"
-    )
+    # Add danger threshold
+    ax.axhline(y=DANGER_THRESHOLD, color='red', linestyle='--', 
+               linewidth=2, label=f'Danger: {DANGER_THRESHOLD}m')
     
+    # Add mean line
+    ax.axhline(y=avg, color='green', linestyle=':', 
+               linewidth=1.5, label=f'Mean: {avg:.2f}m')
+    
+    # Add flood events
     flood_data = node_df[node_df['flood_label'] == 1]
     if len(flood_data) > 0:
-        fig.add_trace(go.Scatter(
-            x=flood_data['timestamp'],
-            y=flood_data['water_level'],
-            mode='markers',
-            name='Flood Event',
-            marker=dict(color='red', size=12, symbol='star')
-        ))
+        ax.scatter(flood_data['timestamp'], flood_data['water_level'], 
+                  color='red', s=80, marker='*', label='Flood Event', zorder=5)
     
-    fig.update_xaxes(
-        rangeslider_visible=True,
-        rangeselector=dict(
-            buttons=[
-                dict(count=1, label="1D", step="day", stepmode="backward"),
-                dict(count=7, label="1W", step="day", stepmode="backward"),
-                dict(count=30, label="1M", step="day", stepmode="backward"),
-                dict(step="all", label="All")
-            ]
-        )
-    )
+    # Formatting
+    ax.set_xlabel('Date/Time', fontsize=12)
+    ax.set_ylabel('Water Level (m)', fontsize=12)
+    ax.set_title(f'Water Level Monitoring - {selected_node}', fontsize=14, fontweight='bold')
+    ax.legend(loc='upper left')
+    ax.grid(True, alpha=0.3)
     
-    fig.update_layout(
-        height=500,
-        xaxis_title="Date/Time",
-        yaxis_title="Water Level (m)",
-        hovermode='x unified',
-        template='plotly_white'
-    )
+    # Rotate x-axis labels
+    plt.xticks(rotation=45)
+    plt.tight_layout()
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Display in Streamlit
+    st.pyplot(fig)
+    plt.close()
+    
+    # Additional info
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📈 Trend", f"{node_df['water_level'].diff().mean():+.4f} m/step")
+    with col2:
+        st.metric("📊 Volatility", f"{node_df['water_level'].std():.3f} m")
+    with col3:
+        flood_count = node_df['flood_label'].sum()
+        st.metric("⚠️ Flood Events", f"{int(flood_count)}")
 
 # ================================================================
-# TAB 2: Distribution
+# TAB 2: Distribution (Using Matplotlib)
 # ================================================================
 
 with tab2:
     col1, col2 = st.columns(2)
     
     with col1:
-        fig_hist = px.histogram(
-            node_df,
-            x='water_level',
-            nbins=50,
-            title=f'Distribution - {selected_node}',
-            color_discrete_sequence=['blue']
-        )
-        fig_hist.add_vline(x=DANGER_THRESHOLD, line_dash="dash", line_color="red")
-        fig_hist.add_vline(x=avg, line_dash="dot", line_color="green")
-        fig_hist.update_layout(template='plotly_white')
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.subheader("📊 Distribution - Selected Node")
+        
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.hist(node_df['water_level'], bins=50, color='blue', alpha=0.7, edgecolor='black')
+        ax.axvline(x=DANGER_THRESHOLD, color='red', linestyle='--', 
+                   linewidth=2, label=f'Threshold: {DANGER_THRESHOLD}m')
+        ax.axvline(x=avg, color='green', linestyle=':', 
+                   linewidth=1.5, label=f'Mean: {avg:.2f}m')
+        ax.set_xlabel('Water Level (m)', fontsize=12)
+        ax.set_ylabel('Frequency', fontsize=12)
+        ax.set_title(f'Water Level Distribution - {selected_node}', fontsize=14)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close()
     
     with col2:
-        fig_box = px.box(
-            df,
-            x='node_id',
-            y='water_level',
-            title='Distribution Across All Nodes',
-            color='node_id'
-        )
-        fig_box.add_hline(y=DANGER_THRESHOLD, line_dash="dash", line_color="red")
-        fig_box.update_layout(template='plotly_white')
-        st.plotly_chart(fig_box, use_container_width=True)
+        st.subheader("📊 Distribution Across Nodes")
+        
+        fig, ax = plt.subplots(figsize=(8, 5))
+        
+        # Box plot using matplotlib
+        nodes = df['node_id'].unique()
+        data_by_node = [df[df['node_id'] == node]['water_level'].values for node in nodes]
+        
+        bp = ax.boxplot(data_by_node, labels=nodes, patch_artist=True)
+        
+        # Color boxes
+        colors = ['lightblue', 'lightgreen', 'lightcoral', 'lightyellow', 'lightpink']
+        for patch, color in zip(bp['boxes'], colors[:len(nodes)]):
+            patch.set_facecolor(color)
+        
+        ax.axhline(y=DANGER_THRESHOLD, color='red', linestyle='--', 
+                   linewidth=2, label=f'Threshold: {DANGER_THRESHOLD}m')
+        ax.set_xlabel('Node', fontsize=12)
+        ax.set_ylabel('Water Level (m)', fontsize=12)
+        ax.set_title('Water Level Distribution Across All Nodes', fontsize=14)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close()
 
 # ================================================================
-# TAB 3: Predictions (REQUIRES MODEL)
+# TAB 3: Predictions
 # ================================================================
 
 with tab3:
     st.subheader("🔮 CNN-LSTM Model Predictions")
     
-    if len(node_df) >= SEQUENCE_LENGTH:
+    if model is not None and len(node_df) >= SEQUENCE_LENGTH:
         try:
             # Prepare sequence
             recent = node_df.iloc[-SEQUENCE_LENGTH:][feature_cols].values
@@ -501,100 +425,63 @@ with tab3:
                     st.success("✅ SAFE")
             
             # Prediction chart
-            fig_pred = go.Figure()
+            st.subheader("📈 Prediction Visualization")
             
+            fig, ax = plt.subplots(figsize=(12, 5))
+            
+            # Historical data (last 48 hours)
             hist = node_df.tail(48*4)
-            fig_pred.add_trace(go.Scatter(
-                x=hist['timestamp'],
-                y=hist['water_level'],
-                mode='lines',
-                name='Historical',
-                line=dict(color='blue', width=2)
-            ))
+            ax.plot(hist['timestamp'], hist['water_level'], 
+                    color='blue', linewidth=2, label='Historical')
             
+            # Future prediction
             future_time = node_df['timestamp'].iloc[-1] + timedelta(minutes=15)
-            fig_pred.add_trace(go.Scatter(
-                x=[future_time],
-                y=[pred_actual],
-                mode='markers+lines',
-                name='Predicted',
-                line=dict(color='red', width=2, dash='dash'),
-                marker=dict(size=15, color='red')
-            ))
+            ax.scatter([future_time], [pred_actual], 
+                      color='red', s=100, marker='D', label='Predicted', zorder=5)
             
-            # Add confidence interval
-            ci = pred_actual * 0.05
-            fig_pred.add_trace(go.Scatter(
-                x=[future_time, future_time],
-                y=[pred_actual - ci, pred_actual + ci],
-                mode='markers',
-                name='95% CI',
-                marker=dict(color='rgba(255,0,0,0.3)', size=10)
-            ))
+            # Add line to prediction
+            ax.axvline(x=node_df['timestamp'].iloc[-1], color='gray', 
+                      linestyle='--', alpha=0.5)
             
-            fig_pred.update_layout(
-                height=400,
-                xaxis_title="Date/Time",
-                yaxis_title="Water Level (m)",
-                template='plotly_white'
-            )
+            # Add danger threshold
+            ax.axhline(y=DANGER_THRESHOLD, color='red', linestyle='--', 
+                       linewidth=2, label=f'Danger: {DANGER_THRESHOLD}m')
             
-            st.plotly_chart(fig_pred, use_container_width=True)
+            # Formatting
+            ax.set_xlabel('Date/Time', fontsize=12)
+            ax.set_ylabel('Water Level (m)', fontsize=12)
+            ax.set_title('Water Level Prediction', fontsize=14, fontweight='bold')
+            ax.legend(loc='upper left')
+            ax.grid(True, alpha=0.3)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close()
             
             # Alert
             if pred_actual > DANGER_THRESHOLD:
-                st.error("🚨 DANGER ALERT! Immediate action required!")
-                st.markdown("**Action Items:**")
-                st.markdown("- Evacuate low-lying areas")
-                st.markdown("- Alert local authorities")
-                st.markdown("- Monitor water level continuously")
-                st.markdown("- Prepare emergency response teams")
+                st.error("🚨 **DANGER ALERT!** Immediate action required!")
+                st.markdown("""
+                **Action Items:**
+                - ⚠️ Evacuate low-lying areas
+                - 📢 Alert local authorities
+                - 📊 Monitor water level continuously
+                - 🆘 Prepare emergency response teams
+                """)
             elif pred_actual > DANGER_THRESHOLD * 0.8:
-                st.warning("⚠️ WARNING: Water level approaching danger threshold.")
+                st.warning("⚠️ **WARNING:** Water level approaching danger threshold. Monitor closely.")
             else:
-                st.success("✅ SAFE: Water level within safe limits.")
+                st.success("✅ **SAFE:** Water level within safe limits.")
                 
         except Exception as e:
             st.error(f"Prediction error: {str(e)}")
             st.info("Please check model integrity and try again.")
     else:
-        st.info(f"Need at least {SEQUENCE_LENGTH} timesteps for prediction. Currently have {len(node_df)}.")
-        st.progress(len(node_df) / SEQUENCE_LENGTH)
-
-# ================================================================
-# TAB 4: Data Table
-# ================================================================
-
-with tab4:
-    st.subheader("📋 Raw Data")
-    
-    display_df = node_df.copy()
-    display_df['timestamp'] = display_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M')
-    display_df = display_df.round(2)
-    
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        column_config={
-            "timestamp": "Timestamp",
-            "water_level": st.column_config.NumberColumn("Water Level (m)", format="%.2f"),
-            "rainfall": st.column_config.NumberColumn("Rainfall (mm)", format="%.1f"),
-            "temperature": st.column_config.NumberColumn("Temp (°C)", format="%.1f"),
-            "humidity": st.column_config.NumberColumn("Humidity (%)", format="%.0f"),
-            "ph": st.column_config.NumberColumn("pH", format="%.2f"),
-            "turbidity": st.column_config.NumberColumn("Turbidity (NTU)", format="%.1f"),
-            "tds": st.column_config.NumberColumn("TDS (ppm)", format="%.0f"),
-        }
-    )
-    
-    csv = node_df.to_csv(index=False)
-    st.download_button(
-        label="📥 Download Data as CSV",
-        data=csv,
-        file_name=f"water_level_data_{selected_node}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
+        if model is None:
+            st.info("💡 Train the model first using train_model.py")
+        else:
+            st.info(f"Need at least {SEQUENCE_LENGTH} timesteps. Currently have {len(node_df)}.")
+            st.progress(len(node_df) / SEQUENCE_LENGTH)
 
 # ================================================================
 # ALERTS
@@ -681,7 +568,6 @@ st.markdown(f"""
     Developed by <strong>{DEVELOPER_INFO['name']}</strong> | 
     <a href="mailto:{DEVELOPER_INFO['email']}">📧 Contact</a> | 
     <a href="{DEVELOPER_INFO['github']}">🐙 GitHub</a> | 
-    <a href="{DEVELOPER_INFO['linkedin']}">🔗 LinkedIn</a> | 
     © 2026 All Rights Reserved
 </div>
 """, unsafe_allow_html=True)
